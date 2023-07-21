@@ -2,14 +2,15 @@ use std::collections::VecDeque;
 use std::{collections::HashMap, fs, time::Duration};
 // use chrono::Local;
 use chrono:: Utc;
+use equity_papi::adapters::binance::papi::http::actions::BinancePapiApi;
 use log::{info, warn};
 use serde_json::{Map, Value};
 // use tokio::{sync::broadcast::{self, Receiver}};
-use equity::adapters::binance::futures::http::actions::BinanceFuturesApi;
-use equity::adapters::bybit::futures::http::actions::ByBitFuturesApi;
-use equity::base::ssh::SshClient;
-use equity::base::wxbot::WxbotHttpClient;
-use equity::actors::*;
+use equity_papi::adapters::binance::futures::http::actions::BinanceFuturesApi;
+use equity_papi::adapters::bybit::futures::http::actions::ByBitFuturesApi;
+use equity_papi::base::ssh::SshClient;
+use equity_papi::base::wxbot::WxbotHttpClient;
+use equity_papi::actors::*;
 // use test_alarm::models::http_data::*;
 
 #[warn(unused_mut, unused_variables, dead_code)]
@@ -96,7 +97,7 @@ async fn real_time(
         let now = Utc::now();
         let date = format!("{}", now.format("%Y/%m/%d %H:%M:%S"));
             let binance_config = f_config.as_object().unwrap();
-            let binance_futures_api=BinanceFuturesApi::new(
+            let binance_papi_api=BinancePapiApi::new(
                 binance_config
                     .get("base_url")
                     .unwrap()
@@ -117,109 +118,21 @@ async fn real_time(
             let new_name:u64 = name.parse().unwrap();
             let pro_id = binance_config.get("pro_id").unwrap().as_str().unwrap();
 
-            if let Some(data) = binance_futures_api.account(None).await {
+            if let Some(data) = binance_papi_api.account(None).await {
                 let value: Value = serde_json::from_str(&data).unwrap();
-                let assets = value.as_object().unwrap().get("assets")
-            .unwrap().as_array().unwrap();
-            let mut new_total_equity = 0.00;
-            let mut best_price = 0.00;
-            for a in assets {
-                let obj = a.as_object().unwrap();
-                let wallet_balance: f64 = obj.get("walletBalance").unwrap().as_str().unwrap().parse().unwrap();
-                let symbol = obj.get("asset").unwrap().as_str().unwrap();
-    
-                if wallet_balance != 0.00 {
-                    if symbol == "BNB" && name == "4" {
-                        continue;
-                    }
-                    if symbol == "ETH" && name == "3" || symbol == "BNB" && name == "12" {
-                        let asset = format!("{}USDT", symbol);
-                        if let Some(data) = binance_futures_api.get_klines(&asset).await {
-                            let v: Value = serde_json::from_str(&data).unwrap();
-                            let price_obj = v.as_object().unwrap();
-                            let price:f64 = price_obj.get("price").unwrap().as_str().unwrap().parse().unwrap();
-                            best_price = price;
-                            let new_price = wallet_balance * price;
-                            // new_total_balance += new_price;
-                            new_total_equity += new_price;
-                        }
-                    }
-    
-                    let cross_un_pnl: f64 = obj.get("crossUnPnl").unwrap().as_str().unwrap().parse().unwrap();
-                    let pnl = cross_un_pnl + wallet_balance;
-                    // new_total_balance += wallet_balance;
-                    new_total_equity += pnl;
-                }
-            }
-            // 权益
-            let new_total_equity_eth: f64 = ((new_total_equity / best_price) - 28.97086) * best_price;
-            equity_map.insert(String::from("time"), Value::from(date));
-            equity_map.insert(String::from("name"), Value::from(new_name));
-            if name == "3" {
-                equity_map.insert(String::from("equity"), Value::from(new_total_equity_eth.to_string()));
-            } else {
-                equity_map.insert(String::from("equity"), Value::from(new_total_equity.to_string()));
-            }
+                let obj = value.as_object().unwrap();
+                let equity = obj.get("accountEquity").unwrap().as_str().unwrap();
+                equity_map.insert(String::from("time"), Value::from(date));
+                equity_map.insert(String::from("name"), Value::from(new_name));
+                    equity_map.insert(String::from("equity"), Value::from(equity));
             // equity_map.insert(String::from("prod_id"), Value::from(pro_id));
-            equity_map.insert(String::from("type"), Value::from("Futures"));
+            equity_map.insert(String::from("type"), Value::from("Papi"));
             equity_histories.push_back(Value::from(equity_map));
             }
         }
 
         let res = trade_mapper::TradeMapper::insert_equity(Vec::from(equity_histories.clone()));
         println!("插入权益数据{}, 数据{:?}", res, Vec::from(equity_histories.clone()));
-
-
-
-        for f_config in bybit_futures {
-            let mut equity_bybit_map: Map<String, Value> = Map::new();
-            let now = Utc::now();
-            let date = format!("{}", now.format("%Y/%m/%d %H:%M:%S"));
-            let bybit_config = f_config.as_object().unwrap();
-            let bybit_futures_api=ByBitFuturesApi::new(
-                bybit_config
-                    .get("base_url")
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
-                    bybit_config
-                    .get("api_key")
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
-                    bybit_config
-                    .get("secret_key")
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
-            );
-            let name = bybit_config.get("name").unwrap().as_str().unwrap();
-            let new_name:u64 = name.parse().unwrap();
-
-            if let Some(data) = bybit_futures_api.get_account_overview(Some("UNIFIED")).await {
-                let value: Value = serde_json::from_str(&data).unwrap();
-                let result = value.get("result").unwrap().as_object().unwrap();
-                let list = result.get("list").unwrap().as_array().unwrap();
-                for i in list{
-                    let obj = i.as_object().unwrap();
-                    let equity = obj.get("totalEquity").unwrap().as_str().unwrap();
-                    equity_bybit_map.insert(String::from("name"), Value::from(new_name));
-                    equity_bybit_map.insert(String::from("time"), Value::from(date.clone()));
-                    equity_bybit_map.insert(String::from("equity"), Value::from(equity));
-                }
-
-                equity_bybit_histories.push_back(Value::from(equity_bybit_map));
-
-                 
-            }
-    
-            
-
-        }
-        let res = trade_mapper::TradeMapper::insert_bybit_equity(Vec::from(equity_bybit_histories.clone()));
-        println!("插入bybit权益数据{}, 数据{:?}", res, Vec::from(equity_bybit_histories.clone()));
-
-
         // 获取账户信息
         
 
@@ -265,7 +178,7 @@ async fn main() {
         // let mut servers_config = Map::new();
         let binance_config = config.get("Binance").unwrap();
         let bybit_config = config.get("ByBit").unwrap();
-        let binance_future_config = binance_config.get("futures").unwrap().as_array().unwrap();
+        let binance_future_config = binance_config.get("papi").unwrap().as_array().unwrap();
         let binance_spot_config = binance_config.get("spot").unwrap().as_array().unwrap();
         let bybit_futures_config = bybit_config.get("futures").unwrap().as_array().unwrap();
         let server_config = config.get("Server").unwrap();

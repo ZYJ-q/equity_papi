@@ -96,6 +96,16 @@
                 "pro_id": "4",
                 "init_fund": 500
             }
+        ],
+        "papi": [
+            {
+                "base_url": "https://papi.binance.com",
+                "api_key": "z5bY7DSVqzyfq55TEv5GtDUFGIZNT7KT2Q7oqcgqjaBnGpc6Gc2OvlktAOEpoZ8u",
+                "secret_key": "HdAeixyQpaKvBX45FEDdQDqQgrzJ3o8o3xSasaRw7JMNYptuqf2M8KwnAk2YyYvp",
+                "name": "14",
+                "pro_id": "2",
+                "init_fund": 500
+            }
         ]
     },
     "ByBit": {
