@@ -120,8 +120,29 @@ async fn real_time(
 
             if let Some(data) = binance_papi_api.account(None).await {
                 let value: Value = serde_json::from_str(&data).unwrap();
-                let obj = value.as_object().unwrap();
-                let equity = obj.get("accountEquity").unwrap().as_str().unwrap();
+                let assets = value.as_array().unwrap();
+            let mut equity = 0.0;
+
+        for p in assets {
+            let obj = p.as_object().unwrap();
+            let amt:f64 = obj.get("totalWalletBalance").unwrap().as_str().unwrap().parse().unwrap();
+            if amt == 0.0 {
+                continue;
+            } else {
+                let symbol = obj.get("asset").unwrap().as_str().unwrap();
+                if symbol == "BTC" {
+                    continue;
+                } else {
+                    let unrealied_um:f64 = obj.get("umUnrealizedPNL").unwrap().as_str().unwrap().parse().unwrap();
+                    let unrealied_cm:f64 = obj.get("cmUnrealizedPNL").unwrap().as_str().unwrap().parse().unwrap();
+                    let unrealied = unrealied_cm + unrealied_um;
+                    let total_equity = unrealied + amt;
+                    equity += total_equity;
+                }
+            }
+
+            
+        }
                 equity_map.insert(String::from("time"), Value::from(date));
                 equity_map.insert(String::from("name"), Value::from(new_name));
                     equity_map.insert(String::from("equity"), Value::from(equity));
